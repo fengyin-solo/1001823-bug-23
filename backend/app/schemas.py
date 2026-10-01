@@ -13,6 +13,8 @@ class PageResult(BaseModel, Generic[T]):
     total: int
     page: int = 1
     size: int = 20
+    # 与列表同源的概览统计（目前管网档案使用），保证卡片数字和列表条数对得上
+    stats: dict[str, int] | None = None
 
 
 class ActionResult(BaseModel):

@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -26,9 +26,26 @@ for module in ROUTERS:
     app.include_router(module.router)
 
 
+@app.middleware("http")
+async def persist_after_mutation(request: Request, call_next):
+    """所有写操作结束后把内存数据落盘，让其它模块的状态流转也能跨重启保留。
+
+    档案模块在业务层已即时落盘，这里重复写一次幂等无副作用；
+    读请求不落盘，避免无谓 IO。
+    """
+    response = await call_next(request)
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        try:
+            store.save()
+        except OSError:
+            # 落盘失败不吞掉已经成功的业务响应，但要在响应头留痕便于排查
+            response.headers["X-Persist-Warning"] = "数据落盘失败，请检查服务端数据目录权限"
+    return response
+
+
 @app.get("/api/health")
 def health() -> dict[str, object]:
-    """健康检查：确认服务已经监听、示例数据已经就绪。"""
+    """健康检查：确认服务已经监听、数据已经就绪。"""
     return {"ok": True, "app": settings.app_name, "modules": len(store.module_names())}
 
 
